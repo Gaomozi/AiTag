@@ -8,6 +8,12 @@ import os
 import sys
 from functools import partial
 
+from tencentcloud.common import credential#这里需要安装腾讯翻译sdk
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
+from tencentcloud.tmt.v20180321 import tmt_client, models   
+
 def transYoudao(content : str)->str:
     if content == '':
         return ''
@@ -34,7 +40,119 @@ def transYoudao(content : str)->str:
     paper = json.loads(html)
     return  paper['translateResult'][0][0]['tgt']
 
+def transTencentYun(content : str)->str:
+    import binascii
+import hashlib
+import hmac
+import sys
+import urllib.parse
+import urllib.request
+import time
+import random
 
+def sign(secretKey, signStr, signMethod):
+    '''
+    该方法主要是实现腾讯云的签名功能
+    :param secretKey: 用户的secretKey
+    :param signStr: 传递进来字符串，加密时需要使用
+    :param signMethod: 加密方法
+    :return:
+    '''
+    if sys.version_info[0] > 2:
+        signStr = signStr.encode("utf-8")
+        secretKey = secretKey.encode("utf-8")
+
+    # 根据参数中的signMethod来选择加密方式
+    if signMethod == 'HmacSHA256':
+        digestmod = hashlib.sha256
+    elif signMethod == 'HmacSHA1':
+        digestmod = hashlib.sha1
+
+    # 完成加密，生成加密后的数据
+    hashed = hmac.new(secretKey, signStr, digestmod)
+    base64 = binascii.b2a_base64(hashed.digest())[:-1]
+
+    if sys.version_info[0] > 2:
+        base64 = base64.decode()
+
+    return base64
+
+    def dictToStr(dictData):
+        '''
+        本方法主要是将Dict转为List并且拼接成字符串
+        :param dictData:
+        :return: 拼接好的字符串
+        '''
+        tempList = []
+        for eveKey, eveValue in dictData.items():
+            tempList.append(str(eveKey) + "=" + str(eveValue))
+        return "&".join(tempList)
+
+
+# 用户必须准备好的secretId和secretKey
+# 可以在 https://console.cloud.tencent.com/capi 获取
+    secretId = "你的secretId"
+    secretKey = "你的secretKey"
+
+    # 在此处定义一些必须的内容
+    timeData = str(int(time.time())) # 时间戳
+    nonceData = int(random.random()*10000) # Nonce，官网给的信息：随机正整数，与 Timestamp 联合起来， 用于防止重放攻击
+    actionData = "TextTranslate" # Action一般是操作名称
+    uriData = "tmt.tencentcloudapi.com" # uri，请参考官网
+    signMethod="HmacSHA256" # 加密方法
+    requestMethod = "GET" # 请求方法，在签名时会遇到，如果签名时使用的是GET，那么在请求时也请使用GET
+    regionData = "ap-hongkong" # 区域选择
+    versionData = '2018-03-21' # 版本选择
+
+    # 签名时需要的字典
+    # 首先对所有请求参数按参数名做字典序升序排列，所谓字典序升序排列，
+    # 直观上就如同在字典中排列单词一样排序，按照字母表或数字表里递增
+    # 顺序的排列次序，即先考虑第一个“字母”，在相同的情况下考虑第二
+    # 个“字母”，依此类推。
+    signDictData = {
+        'Action' : actionData,
+        'Nonce' : nonceData,
+        'ProjectId':0,
+        'Region' : regionData,
+        'SecretId' : secretId,
+        'SignatureMethod':signMethod,
+        'Source': "en",
+        'SourceText': "hello world",
+        'Target': "zh",
+        'Timestamp' : int(timeData),
+        'Version':versionData ,
+    }
+
+#
+requestStr = "%s%s%s%s%s"%(requestMethod,uriData,"/","?",dictToStr(signDictData))
+
+# 调用签名方法，同时将结果进行url编码，官方文档描述如下：
+# 生成的签名串并不能直接作为请求参数，需要对其进行 URL 编码。 注意：如果用户的请求方法是GET，则对所有请求参
+# 数值均需要做URL编码。 如上一步生成的签名串为 EliP9YW3pW28FpsEdkXt/+WcGeI= ，最终得到的签名串请求参数(Signature)
+# 为： EliP9YW3pW28FpsEdkXt%2f%2bWcGeI%3d ，它将用于生成最终的请求URL。
+signData = urllib.parse.quote(sign(secretKey,requestStr,signMethod))
+
+# 上述操作是实现签名，下面即进行请求
+# 先建立请求参数, 此处参数只在签名时多了一个Signature
+actionArgs = signDictData
+actionArgs["Signature"] = signData
+
+# 根据uri构建请求的url
+requestUrl = "https://%s/?"%(uriData)
+# 将请求的url和参数进行拼接
+requestUrlWithArgs = requestUrl + dictToStr(actionArgs)
+
+# 获得response
+responseData = urllib.request.urlopen(requestUrlWithArgs).read().decode("utf-8")
+
+print(responseData)
+
+# 获得到的结果形式：
+#  {"Response":{"RequestId":"0fd2e5b4-0beb-4e01-906f-e63dd7dd33af","Source":"en","Target":"zh","TargetText":"\u4f60\u597d\u4e16\u754c"}}
+
+# 对Json字符串处理
+import json
+print(json.loads(responseData)["Response"]["TargetText"])
 
 class Page(object):
     def __init__(self, MaxPage):
@@ -70,22 +188,30 @@ class Page(object):
 class CurTags(object):
 
     def __init__(self, pg:Page, allfiles: list[str]):
-        self.__txtPath = allfiles[pg.Current()].replace('.png', '.txt')
+        self.__EnPath = allfiles[pg.Current()].replace('.png', '.txt')
+        self.__CnPath = "./cntags/" + self.__EnPath
         self.engtags = []
         self.cntags = []
         self.buttons = []
     
     def LoadTags(self)->list[str]:
-        if(os.path.exists(self.__txtPath)):
-                with open(self.__txtPath) as file:
-                    self.engtags =file.read().split(', ')
+        if(os.path.exists(self.__EnPath)):
+            with open(self.__EnPath) as file:
+                enfile = file.read()
+                if(enfile!=''):
+                    self.engtags =enfile.split(', ')
         self.LoadCnTags()
         
     def LoadCnTags(self)->list[str]: 
-        for entag in self.engtags:
-            cn = transYoudao(entag)
-            self.cntags.append(cn)
-            self.buttons.append(entag + '('+ cn +')  X')
+        if(os.path.exists(self.__CnPath)):
+            with open(self.__CnPath) as file:
+                cnfile = file.read()
+                if(cnfile!=''):
+                    self.cntags =cnfile.split('，')
+        for i in range(len(self.cntags)):
+            self.buttons.append(self.cntags[i] + '('+ self.engtags[i] +')  X')
+        #for a,b in self.cntags, self.engtags:
+            #self.buttons.append(a + '('+ b +')  X')
     
     def DelTag(self, index :int):
         self.cntags.pop(index)
@@ -99,10 +225,21 @@ class CurTags(object):
             for i in range(1, len(self.engtags)):
                 st += ', '+self.engtags[i]
 
-        with open(self.__txtPath, 'w') as f:
+        with open(self.__EnPath, 'w') as f:
             f.write(st)
             with use_scope('txt' , clear=True):
-                put_text(self.__txtPath, "保存成功") 
+                put_text(self.__EnPath, "保存成功") 
+        
+        if len(self.cntags) > 0:
+            st = self.cntags[0]
+            for i in range(1, len(self.cntags)):
+                st += '，'+self.cntags[i]
+
+        with open(self.__CnPath, 'w') as f:
+            f.write(st)
+            with use_scope('txt' , clear=True):
+                put_text(self.__CnPath, "保存成功") 
+        
     def Clear(self):
         self.cntags.clear()
         self.engtags.clear()
@@ -119,14 +256,14 @@ def Trans(a:str, tg:CurTags):
     strtmp = ''
     for tmp in a:
         tg.cntags.append(tmp)
-        en = transYoudao(tmp)
+        en = transTencentYun(tmp)
         tg.engtags.append(en)
         tg.buttons.append(en+ '('+ tmp +')  X')
         strtmp += (' '+en + ',')
 
     with use_scope('image'):
         with use_scope('trans', clear=True):
-            put_text("有道翻译结果:", strtmp)
+            put_text("有道翻译结果:", strtmp[:-1])
 
 def ReloadImage(a :Page):
     with use_scope('image' , clear=True):
@@ -134,7 +271,7 @@ def ReloadImage(a :Page):
             put_text(pngfiles[a.Current()], "  当前：", a.Current()+1, "/ 总共：", len(pngfiles))
 
 
-def ReloadTags(pg :Page):
+def ReloadTagsButton(pg :Page):
     with use_scope('tags' , clear=True):
         Tag = CurTags(pg, pngfiles)
         Tag.LoadTags()
@@ -152,19 +289,19 @@ def DeletTag(Tag: CurTags, index: int):
 def PrePage (a : Page):
     if a.PrePage():
         ReloadImage(a)
-        ReloadTags(a)
+        ReloadTagsButton(a)
 
     
 def NextPage(a : Page):
     if a.NextPage():  
         ReloadImage(a)
-        ReloadTags(a)
+        ReloadTagsButton(a)
 
 def Jump(a, b: Page):
     num = int(a) - int(pngfiles[b.Current()].replace('.png', ''))
     if(b.Jump(num) == 1):
         ReloadImage(b)
-        ReloadTags(b)
+        ReloadTagsButton(b)
 
 def Save(tg:CurTags, pg:Page):
     tags = CurTags(pg, pngfiles)
@@ -173,16 +310,19 @@ def Save(tg:CurTags, pg:Page):
     tags.buttons = tg.buttons
     
     tags.WriteTags()
-    ReloadTags(pg)
+    ReloadTagsButton(pg)
 
 def AddSave(tg, pg):
     tags = CurTags(pg, pngfiles)
     tags.LoadTags()
+    if(len(tags.engtags) == 0):
+        Save(tg, pg)
+        return
     tags.engtags += tg.engtags
     tags.cntags += tg.cntags
     tags.buttons += tg.buttons
     tags.WriteTags()  
-    ReloadTags(pg)
+    ReloadTagsButton(pg)
 
 
 if getattr(sys, 'frozen', False):
@@ -196,6 +336,8 @@ if len(pngfiles) == 0:
     put_text("  当前路径没有png图片，请将本程序放置在图片所在目录")
     sys.exit()
 
+if not os.path.exists('./cntags'):
+    os.mkdir('./cntags')
 pngfiles = sorted(pngfiles, key=lambda x: int(x.replace('.png', '')), reverse=False)
 
 page=Page(len(pngfiles))
@@ -210,7 +352,7 @@ put_buttons(['翻译','覆盖保存','追加保存'], onclick=[lambda: Trans(pin
 
 
 with use_scope('tags'):
-    ReloadTags(page)
+    ReloadTagsButton(page)
 put_input('Jump', label='输入需要跳转的图像编号（数字）')
 put_button('跳转', onclick=lambda: Jump(pin.Jump, page))
 
