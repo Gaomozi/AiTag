@@ -8,11 +8,6 @@ import os
 import sys
 from functools import partial
 
-from tencentcloud.common import credential#这里需要安装腾讯翻译sdk
-from tencentcloud.common.profile.client_profile import ClientProfile
-from tencentcloud.common.profile.http_profile import HttpProfile
-from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
-from tencentcloud.tmt.v20180321 import tmt_client, models   
 
 def transYoudao(content : str)->str:
     if content == '':
@@ -41,118 +36,26 @@ def transYoudao(content : str)->str:
     return  paper['translateResult'][0][0]['tgt']
 
 def transTencentYun(content : str)->str:
-    import binascii
-import hashlib
-import hmac
-import sys
-import urllib.parse
-import urllib.request
-import time
-import random
+    if content == '':
+        with use_scope('trans', clear=True):
+            put_text("请输入翻译内容")
+    cred = credential.Credential("AKIDEGILDvX2Okx791qcEexeAVeYDl7F8ZyA", "5gCZrssfDVhgSDoESSYmokU6TbdHm481")#"xxxx"改为SecretId，"yyyyy"改为SecretKey
+    httpProfile = HttpProfile()
+    httpProfile.endpoint = "tmt.tencentcloudapi.com"
 
-def sign(secretKey, signStr, signMethod):
-    '''
-    该方法主要是实现腾讯云的签名功能
-    :param secretKey: 用户的secretKey
-    :param signStr: 传递进来字符串，加密时需要使用
-    :param signMethod: 加密方法
-    :return:
-    '''
-    if sys.version_info[0] > 2:
-        signStr = signStr.encode("utf-8")
-        secretKey = secretKey.encode("utf-8")
+    clientProfile = ClientProfile()
+    clientProfile.httpProfile = httpProfile
+    client = tmt_client.TmtClient(cred, "ap-guangzhou", clientProfile)
 
-    # 根据参数中的signMethod来选择加密方式
-    if signMethod == 'HmacSHA256':
-        digestmod = hashlib.sha256
-    elif signMethod == 'HmacSHA1':
-        digestmod = hashlib.sha1
+    req = models.TextTranslateRequest()
+    req.SourceText = content
+    req.Source ='ch'#源语言类型
+    req.Target ='en'#目标语言类型
+    req.ProjectId = 0
 
-    # 完成加密，生成加密后的数据
-    hashed = hmac.new(secretKey, signStr, digestmod)
-    base64 = binascii.b2a_base64(hashed.digest())[:-1]
-
-    if sys.version_info[0] > 2:
-        base64 = base64.decode()
-
-    return base64
-
-    def dictToStr(dictData):
-        '''
-        本方法主要是将Dict转为List并且拼接成字符串
-        :param dictData:
-        :return: 拼接好的字符串
-        '''
-        tempList = []
-        for eveKey, eveValue in dictData.items():
-            tempList.append(str(eveKey) + "=" + str(eveValue))
-        return "&".join(tempList)
-
-
-# 用户必须准备好的secretId和secretKey
-# 可以在 https://console.cloud.tencent.com/capi 获取
-    secretId = "你的secretId"
-    secretKey = "你的secretKey"
-
-    # 在此处定义一些必须的内容
-    timeData = str(int(time.time())) # 时间戳
-    nonceData = int(random.random()*10000) # Nonce，官网给的信息：随机正整数，与 Timestamp 联合起来， 用于防止重放攻击
-    actionData = "TextTranslate" # Action一般是操作名称
-    uriData = "tmt.tencentcloudapi.com" # uri，请参考官网
-    signMethod="HmacSHA256" # 加密方法
-    requestMethod = "GET" # 请求方法，在签名时会遇到，如果签名时使用的是GET，那么在请求时也请使用GET
-    regionData = "ap-hongkong" # 区域选择
-    versionData = '2018-03-21' # 版本选择
-
-    # 签名时需要的字典
-    # 首先对所有请求参数按参数名做字典序升序排列，所谓字典序升序排列，
-    # 直观上就如同在字典中排列单词一样排序，按照字母表或数字表里递增
-    # 顺序的排列次序，即先考虑第一个“字母”，在相同的情况下考虑第二
-    # 个“字母”，依此类推。
-    signDictData = {
-        'Action' : actionData,
-        'Nonce' : nonceData,
-        'ProjectId':0,
-        'Region' : regionData,
-        'SecretId' : secretId,
-        'SignatureMethod':signMethod,
-        'Source': "en",
-        'SourceText': "hello world",
-        'Target': "zh",
-        'Timestamp' : int(timeData),
-        'Version':versionData ,
-    }
-
-#
-requestStr = "%s%s%s%s%s"%(requestMethod,uriData,"/","?",dictToStr(signDictData))
-
-# 调用签名方法，同时将结果进行url编码，官方文档描述如下：
-# 生成的签名串并不能直接作为请求参数，需要对其进行 URL 编码。 注意：如果用户的请求方法是GET，则对所有请求参
-# 数值均需要做URL编码。 如上一步生成的签名串为 EliP9YW3pW28FpsEdkXt/+WcGeI= ，最终得到的签名串请求参数(Signature)
-# 为： EliP9YW3pW28FpsEdkXt%2f%2bWcGeI%3d ，它将用于生成最终的请求URL。
-signData = urllib.parse.quote(sign(secretKey,requestStr,signMethod))
-
-# 上述操作是实现签名，下面即进行请求
-# 先建立请求参数, 此处参数只在签名时多了一个Signature
-actionArgs = signDictData
-actionArgs["Signature"] = signData
-
-# 根据uri构建请求的url
-requestUrl = "https://%s/?"%(uriData)
-# 将请求的url和参数进行拼接
-requestUrlWithArgs = requestUrl + dictToStr(actionArgs)
-
-# 获得response
-responseData = urllib.request.urlopen(requestUrlWithArgs).read().decode("utf-8")
-
-print(responseData)
-
-# 获得到的结果形式：
-#  {"Response":{"RequestId":"0fd2e5b4-0beb-4e01-906f-e63dd7dd33af","Source":"en","Target":"zh","TargetText":"\u4f60\u597d\u4e16\u754c"}}
-
-# 对Json字符串处理
-import json
-print(json.loads(responseData)["Response"]["TargetText"])
+    resp = client.TextTranslate(req)
+    data = json.loads(resp.to_json_string())
+    return data['TargetText']
 
 class Page(object):
     def __init__(self, MaxPage):
@@ -180,7 +83,7 @@ class Page(object):
             return 1
         else:
             return 0
-        print(self.__currentpage, self.__maxpage)
+        
             
     def Current(self):
         return self.__currentpage
@@ -208,6 +111,8 @@ class CurTags(object):
                 cnfile = file.read()
                 if(cnfile!=''):
                     self.cntags =cnfile.split('，')
+        else:
+            self.cntags = ["无中文tag"]*len(self.engtags)
         for i in range(len(self.cntags)):
             self.buttons.append(self.cntags[i] + '('+ self.engtags[i] +')  X')
         #for a,b in self.cntags, self.engtags:
@@ -245,41 +150,39 @@ class CurTags(object):
         self.engtags.clear()
         self.buttons.clear()
 
-class StrTags(object):
-    def __init__(self, En, Cn):
-        self.entags=En
-        self.cntags=Cn
-
 def Trans(a:str, tg:CurTags):
     tg.Clear()
     a =a.split('，')
-    strtmp = ''
+    transStr = ''
     for tmp in a:
         tg.cntags.append(tmp)
-        en = transTencentYun(tmp)
+        en = transYoudao(tmp)
         tg.engtags.append(en)
         tg.buttons.append(en+ '('+ tmp +')  X')
-        strtmp += (' '+en + ',')
+        transStr += (' '+en + ',')
 
-    with use_scope('image'):
-        with use_scope('trans', clear=True):
-            put_text("有道翻译结果:", strtmp[:-1])
+    with use_scope('trans', clear=True):
+        put_row([None, put_text("有道翻译结果:", transStr[:-1])], size='40% 60%')
 
 def ReloadImage(a :Page):
-    with use_scope('image' , clear=True):
-            put_image(open(pngfiles[a.Current()], 'rb').read())
-            put_text(pngfiles[a.Current()], "  当前：", a.Current()+1, "/ 总共：", len(pngfiles))
+    #with use_scope('image' , clear=True):
+    put_image(open(pngfiles[a.Current()], 'rb').read(), height='120px')
+    put_text(pngfiles[a.Current()], "  当前：", a.Current()+1, "/ 总共：", len(pngfiles))
 
 
+def GetTagButtonDic(Tag: CurTags):
+    buttons = []
+    for i in range(0, len(Tag.engtags)):
+        buttons.append(dict(label=Tag.buttons[i], value=i, color='dark'))
+    return buttons
+    
 def ReloadTagsButton(pg :Page):
     with use_scope('tags' , clear=True):
         Tag = CurTags(pg, pngfiles)
         Tag.LoadTags()
         if Tag.engtags != ['']:
-            buttons = []
-            for i in range(0, len(Tag.engtags)):
-                buttons.append(dict(label=Tag.buttons[i], value=i, color='dark'))
-            put_buttons(buttons, onclick=partial(DeletTag, Tag))
+            #put_buttons(GetTagButtonDic(Tag), onclick=partial(DeletTag, Tag))
+            put_row([None, put_buttons(GetTagButtonDic(Tag), onclick=partial(DeletTag, tmptags))], size='40% 60%')
                 
 def DeletTag(Tag: CurTags, index: int):
 
@@ -341,7 +244,10 @@ if not os.path.exists('./cntags'):
 pngfiles = sorted(pngfiles, key=lambda x: int(x.replace('.png', '')), reverse=False)
 
 page=Page(len(pngfiles))
-
+#tmptags = CurTags(page, pngfiles)
+#tmptags.LoadTags()
+transStr = ''
+'''
 with use_scope('image'):
     ReloadImage(page)
 put_buttons(['上一张','下一张'] , onclick=[lambda: PrePage(page), lambda: NextPage(page)])
@@ -350,11 +256,34 @@ put_input('CnTags', label='请输入该图片Tag，使用 , (中文逗号)分割
 tmptags = CurTags(page, pngfiles)
 put_buttons(['翻译','覆盖保存','追加保存'], onclick=[lambda: Trans(pin.CnTags, tmptags), lambda: Save(tmptags, page), lambda: AddSave(tmptags, page)])
 
-
 with use_scope('tags'):
     ReloadTagsButton(page)
 put_input('Jump', label='输入需要跳转的图像编号（数字）')
 put_button('跳转', onclick=lambda: Jump(pin.Jump, page))
+'''
 
+put_scrollable(put_scope('scrollable'), height=900, keep_bottom=True)
+tmptags = []
+with use_scope('scrollable'):
+    for i in range(0, 3):
+        tmptags.append(CurTags(page, pngfiles))
+        tmptags[i].LoadTags()
+        put_table([
+            [span(put_image(open(pngfiles[i], 'rb').read(), height='200px'), row=4), put_input(name = str(i), label='请输入该图片Tag，使用 , (中文逗号)分割')],
+        
+            [put_buttons(['翻译','覆盖保存','追加保存'], onclick=[lambda: Trans(pin.i, tmptags[i]), lambda: Save(tmptags[i], page), lambda: AddSave(tmptags[i], page)])],
+            [put_input('Jump'+str(i), label='输入需要跳转的图像编号（数字）')],
+        ])
+        with use_scope('trans'+str(i), clear=True):
+            put_text("有道翻译结果:", transStr[:-1])
+        with use_scope('tags'+str(i), clear=True):
+            put_buttons(GetTagButtonDic(tmptags[i]), onclick=partial(DeletTag, tmptags[i]))
 
-
+'''
+put_row([put_image(open(pngfiles[page.Current()], 'rb').read(), height='200px'), put_input('CnTags', label='请输入该图片Tag，使用 , (中文逗号)分割')], size='40% 60%')
+put_row([None, put_buttons(['翻译','覆盖保存','追加保存'], onclick=[lambda: Trans(pin.CnTags, tmptags), lambda: Save(tmptags, page), lambda: AddSave(tmptags, page)])], size='40% 60%')
+with use_scope('trans', clear=True):
+    put_row([None, put_text("有道翻译结果:", transStr[:-1])], size='40% 60%')
+with use_scope('tags', clear=True):
+    put_row([None, put_buttons(GetTagButtonDic(tmptags), onclick=partial(DeletTag, tmptags))], size='40% 60%')
+'''
