@@ -8,6 +8,10 @@ import os
 import sys
 from functools import partial
 
+class StrSaver(object):
+    def __init__(self, en:str, cn: str): 
+        self.en = en
+        self.cn = cn
 
 def transYoudao(content : str)->str:
     if content == '':
@@ -35,88 +39,66 @@ def transYoudao(content : str)->str:
     paper = json.loads(html)
     return  paper['translateResult'][0][0]['tgt']
 
-def transTencentYun(content : str)->str:
-    if content == '':
-        with use_scope('trans', clear=True):
-            put_text("请输入翻译内容")
-    cred = credential.Credential("AKIDEGILDvX2Okx791qcEexeAVeYDl7F8ZyA", "5gCZrssfDVhgSDoESSYmokU6TbdHm481")#"xxxx"改为SecretId，"yyyyy"改为SecretKey
-    httpProfile = HttpProfile()
-    httpProfile.endpoint = "tmt.tencentcloudapi.com"
+# def transTencentYun(content : str)->str:
+#     if content == '':
+#         with use_scope('trans', clear=True):
+#             put_text("请输入翻译内容")
+#     cred = credential.Credential("AKIDEGILDvX2Okx791qcEexeAVeYDl7F8ZyA", "5gCZrssfDVhgSDoESSYmokU6TbdHm481")#"xxxx"改为SecretId，"yyyyy"改为SecretKey
+#     httpProfile = HttpProfile()
+#     httpProfile.endpoint = "tmt.tencentcloudapi.com"
 
-    clientProfile = ClientProfile()
-    clientProfile.httpProfile = httpProfile
-    client = tmt_client.TmtClient(cred, "ap-guangzhou", clientProfile)
+#     clientProfile = ClientProfile()
+#     clientProfile.httpProfile = httpProfile
+#     client = tmt_client.TmtClient(cred, "ap-guangzhou", clientProfile)
 
-    req = models.TextTranslateRequest()
-    req.SourceText = content
-    req.Source ='ch'#源语言类型
-    req.Target ='en'#目标语言类型
-    req.ProjectId = 0
+#     req = models.TextTranslateRequest()
+#     req.SourceText = content
+#     req.Source ='ch'#源语言类型
+#     req.Target ='en'#目标语言类型
+#     req.ProjectId = 0
 
-    resp = client.TextTranslate(req)
-    data = json.loads(resp.to_json_string())
-    return data['TargetText']
+#     resp = client.TextTranslate(req)
+#     data = json.loads(resp.to_json_string())
+#     return data['TargetText']
 
-class Page(object):
-    def __init__(self, MaxPage):
-        self.__currentpage=0
-        self.__maxpage=MaxPage
-        
-    def NextPage(self):
-        if self.__currentpage<self.__maxpage-1:
-            self.__currentpage = self.__currentpage +1
-            return 1
-        else:
-            return 0
-            
-    def PrePage(self):
-        if self.__currentpage>0:
-            self.__currentpage =self.__currentpage-1
-            return 1
-        else:
-            return 0
-        
-    def Jump(self, num):
-        if self.__currentpage+num>0 and self.__currentpage+num<self.__maxpage:
-            self.__currentpage =self.__currentpage+num
-            print(self.__currentpage, self.__maxpage)
-            return 1
-        else:
-            return 0
-        
-            
-    def Current(self):
-        return self.__currentpage
+class TagManager(object):
 
-class CurTags(object):
-
-    def __init__(self, pg:Page, allfiles: list[str]):
-        self.__EnPath = allfiles[pg.Current()].replace('.png', '.txt')
+    def __init__(self, i:int, allfiles: list[str]):
+        self.index = i
+        self.__EnPath = allfiles[i].replace('.png', '.txt')
         self.__CnPath = "./cntags/" + self.__EnPath
         self.engtags = []
         self.cntags = []
         self.buttons = []
     
-    def LoadTags(self)->list[str]:
+    def LoadTags(self):
+        self.LoadCnTags()
+        self.LoadEnTags()
+        self.LoadButtons()
+        
+    def LoadCnTags(self): 
+        if(os.path.exists(self.__CnPath)):
+            with open(self.__CnPath) as file:
+                cnfile = file.read()
+                self.cntags =cnfile.split('，')
+    def LoadEnTags(self):
+        if len(self.cntags) == 0:
+            return
         if(os.path.exists(self.__EnPath)):
             with open(self.__EnPath) as file:
                 enfile = file.read()
                 if(enfile!=''):
                     self.engtags =enfile.split(', ')
-        self.LoadCnTags()
-        
-    def LoadCnTags(self)->list[str]: 
-        if(os.path.exists(self.__CnPath)):
-            with open(self.__CnPath) as file:
-                cnfile = file.read()
-                if(cnfile!=''):
-                    self.cntags =cnfile.split('，')
-        else:
-            self.cntags = ["无中文tag"]*len(self.engtags)
+        if len(self.engtags)>len(self.cntags):
+            self.engtags = self.engtags[:len(self.cntags)]
+        elif len(self.engtags)<len(self.cntags):
+            self.engtags = self.engtags+['(null)']*(len(self.cntags)-len(self.engtags))
+    def LoadButtons(self):
+        if len(self.cntags) == 0:
+            return
         for i in range(len(self.cntags)):
             self.buttons.append(self.cntags[i] + '('+ self.engtags[i] +')  X')
-        #for a,b in self.cntags, self.engtags:
-            #self.buttons.append(a + '('+ b +')  X')
+
     
     def DelTag(self, index :int):
         self.cntags.pop(index)
@@ -128,105 +110,142 @@ class CurTags(object):
         if len(self.engtags) > 0:
             st = self.engtags[0]
             for i in range(1, len(self.engtags)):
-                st += ', '+self.engtags[i]
+                st = st+', '+self.engtags[i]
 
         with open(self.__EnPath, 'w') as f:
             f.write(st)
-            with use_scope('txt' , clear=True):
-                put_text(self.__EnPath, "保存成功") 
         
         if len(self.cntags) > 0:
             st = self.cntags[0]
             for i in range(1, len(self.cntags)):
-                st += '，'+self.cntags[i]
+                st = st+'，'+self.cntags[i]
 
         with open(self.__CnPath, 'w') as f:
             f.write(st)
-            with use_scope('txt' , clear=True):
-                put_text(self.__CnPath, "保存成功") 
         
     def Clear(self):
         self.cntags.clear()
         self.engtags.clear()
         self.buttons.clear()
 
-def Trans(a:str, tg:CurTags):
-    tg.Clear()
-    a =a.split('，')
-    transStr = ''
-    for tmp in a:
-        tg.cntags.append(tmp)
-        en = transYoudao(tmp)
-        tg.engtags.append(en)
-        tg.buttons.append(en+ '('+ tmp +')  X')
-        transStr += (' '+en + ',')
+def Trans(cnstr:str, transStr:StrSaver):
+    transStr.cn = cnstr
+    cnstr =cnstr.split('，')
 
+    if len(cnstr) ==0:
+        with use_scope('trans', clear=True):
+            put_text("输入内容为空!")
+            transStr.cn = ''
+        return
+    if len(cnstr)>0:
+        transStr.en = transYoudao(cnstr[0])
+    for i in range(1, len(cnstr)):
+        transStr.en = transStr.en+(', '+transYoudao(cnstr[i]))
     with use_scope('trans', clear=True):
-        put_row([None, put_text("有道翻译结果:", transStr[:-1])], size='40% 60%')
+        put_text("有道翻译结果:", transStr.en)
 
-def ReloadImage(a :Page):
-    #with use_scope('image' , clear=True):
-    put_image(open(pngfiles[a.Current()], 'rb').read(), height='120px')
-    put_text(pngfiles[a.Current()], "  当前：", a.Current()+1, "/ 总共：", len(pngfiles))
-
-
-def GetTagButtonDic(Tag: CurTags):
+def GetTagButtonDic(Tag: TagManager):
     buttons = []
     for i in range(0, len(Tag.engtags)):
         buttons.append(dict(label=Tag.buttons[i], value=i, color='dark'))
     return buttons
-    
-def ReloadTagsButton(pg :Page):
-    with use_scope('tags' , clear=True):
-        Tag = CurTags(pg, pngfiles)
-        Tag.LoadTags()
-        if Tag.engtags != ['']:
-            #put_buttons(GetTagButtonDic(Tag), onclick=partial(DeletTag, Tag))
-            put_row([None, put_buttons(GetTagButtonDic(Tag), onclick=partial(DeletTag, tmptags))], size='40% 60%')
-                
-def DeletTag(Tag: CurTags, index: int):
+
+def ReloadTagsButton(i:int):
+    with use_scope('tags'+str(i) , clear=True):
+        #alltags[i].LoadTags()
+        if alltags[i].engtags != ['']:
+            return put_buttons(GetTagButtonDic(alltags[i]), onclick=partial(DeletTag, alltags[i]))
+            #put_row([None, put_buttons(GetTagButtonDic(Tag), onclick=partial(DeletTag, tmptags))], size='40% 60%')
+                               
+def DeletTag(Tag: TagManager, index: int):
 
     Tag.DelTag(index)
-    Save(Tag, page)
-          
-def PrePage (a : Page):
-    if a.PrePage():
-        ReloadImage(a)
-        ReloadTagsButton(a)
-
-    
-def NextPage(a : Page):
-    if a.NextPage():  
-        ReloadImage(a)
-        ReloadTagsButton(a)
-
-def Jump(a, b: Page):
-    num = int(a) - int(pngfiles[b.Current()].replace('.png', ''))
-    if(b.Jump(num) == 1):
-        ReloadImage(b)
-        ReloadTagsButton(b)
-
-def Save(tg:CurTags, pg:Page):
-    tags = CurTags(pg, pngfiles)
-    tags.engtags = tg.engtags
-    tags.cntags = tg.cntags
-    tags.buttons = tg.buttons
-    
-    tags.WriteTags()
-    ReloadTagsButton(pg)
-
-def AddSave(tg, pg):
-    tags = CurTags(pg, pngfiles)
-    tags.LoadTags()
-    if(len(tags.engtags) == 0):
-        Save(tg, pg)
+    Tag.WriteTags() 
+    Reloadtable(Tag.index)
+              
+def Save(s:StrSaver, chosen:set, alltgs:list):
+    if len(s.cn)==0 or len(s.en)==0:
+        print("no input")
         return
-    tags.engtags += tg.engtags
-    tags.cntags += tg.cntags
-    tags.buttons += tg.buttons
-    tags.WriteTags()  
-    ReloadTagsButton(pg)
+    engtags = s.en.split(', ')
+    cntags = s.cn.split('，')
+    buttons = []
+    if len(engtags)!=len(cntags):
+        print("input cn\en nums not equ")
+        return
+    for i in range(len(engtags)):
+        buttons.append(engtags[i]+ '('+ cntags[i] +')  X')
 
+    for i in chosen:
+        alltgs[i].engtags = engtags
+        alltgs[i].cntags = cntags
+        alltgs[i].buttons = buttons
+        alltgs[i].WriteTags()    
+        Reloadtable(i)
+
+def AddSave(s:StrSaver, chosen:set, alltgs:list):
+    if len(s.cn)==0 or len(s.en)==0:
+        print("no input")
+        return
+    engtags = s.en.split(', ')
+    cntags = s.cn.split('，')
+    buttons = []
+    if len(engtags)!=len(cntags):
+        print("input cn\en nums not equ")
+        return
+    for i in range(len(engtags)):
+        buttons.append(cntags[i]+ '('+ engtags[i] +')  X')
+
+    for i in chosen:
+        if(len(alltgs[i].engtags) == 0):
+            alltgs[i].engtags = engtags
+            alltgs[i].cntags = cntags
+            alltgs[i].buttons = buttons
+        else:
+            alltgs[i].engtags = alltgs[i].engtags + engtags
+            alltgs[i].cntags = alltgs[i].cntags + cntags
+            alltgs[i].buttons = alltgs[i].buttons + buttons
+        alltgs[i].WriteTags()  
+        Reloadtable(i)
+
+def ClickChoose(i:int):
+    if i in chosenSet:
+        chosenSet.remove(i)
+    else:
+        chosenSet.add(i)
+    Reloadtable(i)
+    ReloadSelectTool()
+
+def Select(i:int):
+    with use_scope('select'+str(i), clear=True):
+        if i in chosenSet:
+            return put_button('☑：点击取消选择', onclick=lambda: ClickChoose(i), color='danger',scope='select'+str(i))
+        else:
+            return put_button('☐：点击选择图片', onclick=lambda: ClickChoose(i), color='secondary',scope='select'+str(i))
+
+def Reloadtable(i:int):
+    with use_scope('table'+str(i), clear=True):
+        # put_table([
+        #     [Select(i),span(put_image(open(pngfiles[i], 'rb').read(), width = '150'), row=4),span(ReloadTagsButton(i), row=4),put_text("sadasdasdasd")],
+        #     #[ReloadTagsButton(i)],                
+        # ])
+        #put_row([put_text('------NO:', i ,'----------------------', pngfiles[i] ,'---------------------------------')])
+        put_row([Select(i),put_text(' NO:',i,'\n ',pngfiles[i]), put_image(open(pngfiles[i], 'rb').read(), width = '150'),ReloadTagsButton(i)], size='60px 60px 150px')
+        put_row([put_text('------------------------------------------------------------------------------')])
+
+def ReloadChoosen():
+    return put_text('已选数量：'+str(len(chosenSet)) + ' :' +str(chosenSet))
+
+def ClearSelect():
+    clearlist=[]
+    for i in chosenSet:
+        clearlist.append(i)
+    for i in clearlist:
+        ClickChoose(i)
+
+def ReloadSelectTool():
+    with use_scope('selectNum', clear=True):
+        put_row([put_button('清除选择', onclick= lambda: ClearSelect()),ReloadChoosen()],size='100px')
 
 if getattr(sys, 'frozen', False):
     path = sys._MEIPASS
@@ -238,52 +257,48 @@ pngfiles = [name for name in os.listdir('./')
 if len(pngfiles) == 0:
     put_text("  当前路径没有png图片，请将本程序放置在图片所在目录")
     sys.exit()
-
 if not os.path.exists('./cntags'):
     os.mkdir('./cntags')
 pngfiles = sorted(pngfiles, key=lambda x: int(x.replace('.png', '')), reverse=False)
+totalNum =len(pngfiles)
+chosenSet = set()
+alltags = []
+transStr = StrSaver('', '')
 
-page=Page(len(pngfiles))
-#tmptags = CurTags(page, pngfiles)
-#tmptags.LoadTags()
-transStr = ''
-'''
-with use_scope('image'):
-    ReloadImage(page)
-put_buttons(['上一张','下一张'] , onclick=[lambda: PrePage(page), lambda: NextPage(page)])
+pageNum = int(totalNum/50)
+remainNum = totalNum-pageNum
+imageBegin =0
+imageEnd =min(50 + imageBegin, pageNum)
 
-put_input('CnTags', label='请输入该图片Tag，使用 , (中文逗号)分割')
-tmptags = CurTags(page, pngfiles)
-put_buttons(['翻译','覆盖保存','追加保存'], onclick=[lambda: Trans(pin.CnTags, tmptags), lambda: Save(tmptags, page), lambda: AddSave(tmptags, page)])
+def last():
+    if imageBegin > 49:
+        imageBegin -= 50
+        imageEnd -= 50
+    LoadPage()
 
-with use_scope('tags'):
-    ReloadTagsButton(page)
-put_input('Jump', label='输入需要跳转的图像编号（数字）')
-put_button('跳转', onclick=lambda: Jump(pin.Jump, page))
-'''
+def next():
+    if imageBegin < pageNum-remainNum:
+        imageBegin += 50
+        imageEnd += 50
+        if imageEnd>totalNum:
+            imageEnd = totalNum
+    LoadPage()
 
-put_scrollable(put_scope('scrollable'), height=900, keep_bottom=True)
-tmptags = []
-with use_scope('scrollable'):
-    for i in range(0, 3):
-        tmptags.append(CurTags(page, pngfiles))
-        tmptags[i].LoadTags()
-        put_table([
-            [span(put_image(open(pngfiles[i], 'rb').read(), height='200px'), row=4), put_input(name = str(i), label='请输入该图片Tag，使用 , (中文逗号)分割')],
-        
-            [put_buttons(['翻译','覆盖保存','追加保存'], onclick=[lambda: Trans(pin.i, tmptags[i]), lambda: Save(tmptags[i], page), lambda: AddSave(tmptags[i], page)])],
-            [put_input('Jump'+str(i), label='输入需要跳转的图像编号（数字）')],
-        ])
-        with use_scope('trans'+str(i), clear=True):
-            put_text("有道翻译结果:", transStr[:-1])
-        with use_scope('tags'+str(i), clear=True):
-            put_buttons(GetTagButtonDic(tmptags[i]), onclick=partial(DeletTag, tmptags[i]))
 
-'''
-put_row([put_image(open(pngfiles[page.Current()], 'rb').read(), height='200px'), put_input('CnTags', label='请输入该图片Tag，使用 , (中文逗号)分割')], size='40% 60%')
-put_row([None, put_buttons(['翻译','覆盖保存','追加保存'], onclick=[lambda: Trans(pin.CnTags, tmptags), lambda: Save(tmptags, page), lambda: AddSave(tmptags, page)])], size='40% 60%')
+def LoadPage():
+    with use_scope('page', clear=True):
+        put_scrollable(put_scope('scrollable'), height=750, keep_bottom=False, border = True)
+        with use_scope('scrollable'):
+            alltags.clear()
+            for i in range(imageBegin, imageEnd):
+                alltags.append(TagManager(i, pngfiles))
+                alltags[i].LoadTags()
+                Reloadtable(i)
+
+put_buttons(['last','next'], onclick=[lambda: last(),lambda: next()])
+LoadPage()
+[[put_buttons(['翻译','覆盖保存','追加保存'], onclick=[lambda: Trans(pin.CnTags, transStr), lambda: Save(transStr, chosenSet, alltags), lambda: AddSave(transStr, chosenSet, alltags)])], put_input(name = 'CnTags', label='请输入该图片Tag，使用 , (中文逗号)分割')]
 with use_scope('trans', clear=True):
-    put_row([None, put_text("有道翻译结果:", transStr[:-1])], size='40% 60%')
-with use_scope('tags', clear=True):
-    put_row([None, put_buttons(GetTagButtonDic(tmptags), onclick=partial(DeletTag, tmptags))], size='40% 60%')
-'''
+    put_text('翻译结果：')
+ReloadSelectTool()
+
